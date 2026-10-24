@@ -1,0 +1,71 @@
+{
+  "model": "Logistic Regression",
+  "cv_roc_auc": 0.8458,
+  "n_test": 1409,
+  "test_churn_rate": 0.2654,
+  "assumptions": {
+    "clv": 1500.0,
+    "offer_cost": 100.0,
+    "success_rate": 0.3
+  },
+  "default_threshold": {
+    "threshold": 0.5,
+    "roc_auc": 0.8421,
+    "pr_auc": 0.6364,
+    "precision": 0.4975,
+    "recall": 0.7888,
+    "f1": 0.6101,
+    "tp": 295,
+    "fp": 298,
+    "fn": 79,
+    "tn": 737
+  },
+  "tuned_threshold": {
+    "threshold": 0.47,
+    "roc_auc": 0.8421,
+    "pr_auc": 0.6364,
+    "precision": 0.4927,
+    "recall": 0.8155,
+    "f1": 0.6143,
+    "tp": 305,
+    "fp": 314,
+    "fn": 69,
+    "tn": 721
+  },
+  "impact_default": {
+    "threshold": 0.5,
+    "customers_targeted": 593,
+    "churners_caught": 295,
+    "churners_missed": 79,
+    "wasted_offers": 298,
+    "customers_saved": 88.5,
+    "campaign_cost": 59300.0,
+    "revenue_saved": 132750.0,
+    "net_savings": 73450.0,
+    "roi": 1.239
+  },
+  "impact_tuned": {
+    "threshold": 0.47,
+    "customers_targeted": 619,
+    "churners_caught": 305,
+    "churners_missed": 69,
+    "wasted_offers": 314,
+    "customers_saved": 91.5,
+    "campaign_cost": 61900.0,
+    "revenue_saved": 137250.0,
+    "net_savings": 75350.0,
+    "roi": 1.217
+  },
+  "impact_contact_all": {
+    "threshold": 0.0,
+    "customers_targeted": 1409,
+    "churners_caught": 374,
+    "churners_missed": 0,
+    "wasted_offers": 1035,
+    "customers_saved": 112.2,
+    "campaign_cost": 140900.0,
+    "revenue_saved": 168300.0,
+    "net_savings": 27400.0,
+    "roi": 0.194
+  }
+}
