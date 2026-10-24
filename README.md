@@ -67,15 +67,31 @@ All numbers are measured on **1,409 customers the model never saw during trainin
 
 ## ⚙️ How It Works
 
-```
- IBM Telco data ──► Clean ──► Feature engineering ──► Model comparison ──► Optuna tuning
-   (7,043 rows)       │            │                    (5-fold CV)            │
-                      │            │                                           ▼
-                 blank charges  tenure groups,                     Cost-based threshold
-                 → 0 (new       avg spend, # services,            (maximise net savings)
-                 customers)     auto-pay, price change                       │
-                                                                             ▼
-          Streamlit dashboard ◄── Retention recommender ◄── SHAP explanations
+```mermaid
+flowchart TB
+    subgraph S1["1 · Prepare the data"]
+        direction LR
+        A[("📥 IBM Telco data<br/>7,043 customers")] --> B["🧹 Clean<br/>fix blanks & types"] --> C["🛠️ Engineer features<br/>tenure groups · spend · services"]
+    end
+    subgraph S2["2 · Build the model"]
+        direction LR
+        D["🤖 Compare models<br/>LogReg · RF · LightGBM"] --> E["🎯 Tune with Optuna"] --> F["💰 Pick threshold<br/>maximise net savings"]
+    end
+    subgraph S3["3 · Explain and act"]
+        direction LR
+        G["🔍 SHAP explanations"] --> H["💡 Retention recommender<br/>rules + optional LLM"] --> I["📊 Streamlit dashboard"]
+    end
+    S1 --> S2 --> S3
+
+    classDef data fill:#E3F2FD,stroke:#2E86AB,color:#0b3954
+    classDef model fill:#FFF3E0,stroke:#E4572E,color:#7a2a12
+    classDef xai fill:#E8F5E9,stroke:#3BB273,color:#1b5e20
+    class A,B,C data
+    class D,E,F model
+    class G,H,I xai
+    style S1 fill:#F8FAFC,stroke:#2E86AB,stroke-dasharray:4 3
+    style S2 fill:#FFFBF7,stroke:#E4572E,stroke-dasharray:4 3
+    style S3 fill:#F7FCF8,stroke:#3BB273,stroke-dasharray:4 3
 ```
 
 1. **Data** (`data/get_data.py`, `src/data_prep.py`): downloads the public dataset, or generates a synthetic copy if offline. Blank `TotalCharges` belong to brand-new customers (tenure 0), so they are set to 0 instead of being dropped or mean-imputed. Duplicates are removed and data types fixed.
@@ -128,24 +144,23 @@ The trained model, processed data and reports are committed, so **step 3 works i
 
 ### Project structure
 
-```
-├── app/streamlit_app.py      # 4-page interactive dashboard
-├── data/get_data.py          # download or generate the dataset
-├── data/raw, data/processed  # raw CSV, cleaned data, test set, OOF predictions
-├── notebooks/01_eda.ipynb    # exploratory analysis with business insights
-├── src/
-│   ├── config.py             # paths, seed, business assumptions
-│   ├── data_prep.py          # cleaning (each decision documented)
-│   ├── features.py           # feature engineering + preprocessing
-│   ├── train.py              # CV model comparison + Optuna tuning
-│   ├── evaluate.py           # metrics, cost-based threshold, figures
-│   ├── explain.py            # SHAP, plain-English explanations, recommender, LLM hook
-│   └── business.py           # savings / ROI calculator
-├── models/                   # saved pipeline + model info
-├── reports/                  # metrics.json, model comparison, figures
-├── tests/                    # pytest unit tests
-└── run_pipeline.py           # one command to rebuild everything
-```
+| | Path | What it does |
+|:-:|---|---|
+| 📊 | [`app/streamlit_app.py`](app/streamlit_app.py) | 4-page interactive dashboard |
+| 📥 | [`data/get_data.py`](data/get_data.py) | Downloads the dataset, or generates a synthetic copy offline |
+| 🗂️ | [`data/raw/`](data/raw) · [`data/processed/`](data/processed) | Raw CSV, cleaned data, test set, out-of-fold predictions |
+| 📓 | [`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb) | Exploratory analysis with a business insight under every chart |
+| ⚙️ | [`src/config.py`](src/config.py) | Paths, random seed and business assumptions |
+| 🧹 | [`src/data_prep.py`](src/data_prep.py) | Data cleaning, with each decision documented |
+| 🛠️ | [`src/features.py`](src/features.py) | Feature engineering and preprocessing pipeline |
+| 🤖 | [`src/train.py`](src/train.py) | Cross-validated model comparison and Optuna tuning |
+| 🎯 | [`src/evaluate.py`](src/evaluate.py) | Metrics, cost-based threshold and evaluation charts |
+| 🔍 | [`src/explain.py`](src/explain.py) | SHAP, plain-English explanations, recommender, LLM hook |
+| 💰 | [`src/business.py`](src/business.py) | Savings and ROI calculator |
+| 🧠 | [`models/`](models) | Saved model pipeline and model info |
+| 📈 | [`reports/`](reports) | Metrics, model comparison and figures |
+| ✅ | [`tests/`](tests) | pytest unit tests |
+| ▶️ | [`run_pipeline.py`](run_pipeline.py) | One command to rebuild everything |
 
 ## ☁️ Deploy for free on Streamlit Community Cloud
 
