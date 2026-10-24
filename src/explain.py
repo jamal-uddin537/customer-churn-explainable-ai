@@ -23,7 +23,7 @@ import shap
 from sklearn.pipeline import Pipeline
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from src.config import SEED  # noqa: E402
+from src.config import RISK_HIGH, RISK_MEDIUM, SEED  # noqa: E402
 from src.features import CATEGORICAL_FEATURES, FEATURES, NUMERIC_FEATURES  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -41,15 +41,35 @@ PRETTY: dict[str, str] = {
 }
 
 
+# Engineered features that describe the same business driver are explained
+# together. Otherwise SHAP splits credit between correlated columns and produces
+# confusing text such as "tenure group raises risk" for a 6-year customer.
+FAMILIES: dict[str, str] = {
+    "tenure_group": "tenure", "TotalCharges": "tenure",
+    "is_month_to_month": "Contract",
+    "auto_pay": "PaymentMethod",
+    "avg_monthly_spend": "MonthlyCharges", "charge_increase": "MonthlyCharges",
+}
+DRIVERS: list[str] = [f for f in FEATURES if f not in FAMILIES]
+
+
 def pretty(name: str) -> str:
     """Human-readable label for a feature name."""
     return PRETTY.get(name, name)
 
 
 class ChurnExplainer:
-    """SHAP explainer for a fitted preprocessing + model pipeline."""
+    """SHAP explainer for a fitted pipeline or a ``CalibratedChurnModel``.
 
-    def __init__(self, pipe: Pipeline, background: pd.DataFrame, n_background: int = 200) -> None:
+    SHAP values are in (calibrated) log-odds: for a calibrated model the raw
+    values are multiplied by the Platt slope ``a``, which is exact because the
+    calibration is linear in log-odds.
+    """
+
+    def __init__(self, model: object, background: pd.DataFrame, n_background: int = 200) -> None:
+        pipe: Pipeline = getattr(model, "pipe", model)
+        self.scale = float(getattr(model, "a", 1.0))
+        self.offset = float(getattr(model, "b", 0.0))
         self.pipe = pipe
         self.prep = pipe.named_steps["prep"]
         self.model = pipe.named_steps["model"]
@@ -62,41 +82,40 @@ class ChurnExplainer:
                 self.model, shap.maskers.Independent(bg, max_samples=len(bg)))
             self.kind = "linear"
         else:
-            self.explainer = shap.TreeExplainer(self.model, bg, model_output="probability")
+            self.explainer = shap.TreeExplainer(self.model, bg, model_output="raw")
             self.kind = "tree"
 
     def _group_columns(self) -> dict[str, list[int]]:
-        """Map each original feature to the indices of its transformed columns."""
-        groups: dict[str, list[int]] = {f: [] for f in FEATURES}
+        """Map each business driver to the indices of its transformed columns."""
+        groups: dict[str, list[int]] = {f: [] for f in DRIVERS}
         for i, col in enumerate(self.out_names):
-            if col in NUMERIC_FEATURES:
-                groups[col].append(i)
-                continue
-            for f in sorted(CATEGORICAL_FEATURES, key=len, reverse=True):
-                if col.startswith(f + "_"):
-                    groups[f].append(i)
-                    break
+            feat = col if col in NUMERIC_FEATURES else next(
+                (f for f in sorted(CATEGORICAL_FEATURES, key=len, reverse=True) if col.startswith(f + "_")),
+                None)
+            if feat is not None:
+                groups[FAMILIES.get(feat, feat)].append(i)
         return groups
 
     def raw_shap(self, X: pd.DataFrame) -> np.ndarray:
-        """SHAP values per transformed column (log-odds for linear, prob for tree)."""
+        """SHAP values per transformed column, in calibrated log-odds."""
         vals = self.explainer.shap_values(self.prep.transform(X[FEATURES]))
         if isinstance(vals, list):
             vals = vals[1]
         vals = np.asarray(vals)
-        return vals[..., 1] if vals.ndim == 3 else vals
+        vals = vals[..., 1] if vals.ndim == 3 else vals
+        return vals * self.scale
 
     def shap_values(self, X: pd.DataFrame) -> pd.DataFrame:
-        """SHAP values aggregated to original features (rows = customers)."""
+        """SHAP values aggregated to business drivers (rows = customers)."""
         raw = self.raw_shap(X)
         agg = {f: raw[:, idx].sum(axis=1) for f, idx in self.groups.items() if idx}
         return pd.DataFrame(agg, index=X.index)
 
     @property
     def base_value(self) -> float:
-        """Expected model output (log-odds for linear models)."""
+        """Expected model output in calibrated log-odds."""
         ev = self.explainer.expected_value
-        return float(np.ravel(ev)[-1])
+        return float(np.ravel(ev)[-1]) * self.scale + self.offset
 
     def explain_customer(self, row: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
         """Top drivers for one customer: feature, value, SHAP impact and direction."""
@@ -124,12 +143,13 @@ def format_value(feature: str, value: object) -> str:
 
 def plain_explanation(drivers: pd.DataFrame, probability: float) -> str:
     """One-paragraph plain-English explanation of a prediction."""
-    risk = "HIGH" if probability >= 0.6 else "MEDIUM" if probability >= 0.35 else "LOW"
+    risk = "HIGH" if probability >= RISK_HIGH else "MEDIUM" if probability >= RISK_MEDIUM else "LOW"
     up = drivers[drivers.impact > 0]
     down = drivers[drivers.impact < 0]
-    parts = [f"Estimated churn probability: {probability:.0%} ({risk} risk)."]
+    pct = "<1%" if probability < 0.005 else f"{probability:.0%}"
+    parts = [f"Estimated churn probability: {pct} ({risk} risk)."]
     if len(up):
-        lead = "Main reasons for concern" if probability >= 0.35 else "Minor factors adding some risk"
+        lead = "Main reasons for concern" if probability >= RISK_MEDIUM else "Minor factors adding some risk"
         parts.append(f"{lead}: " + "; ".join(
             f"{r.label} is {format_value(r.feature, r.value)}" for r in up.itertuples()) + ".")
     if len(down):
@@ -151,15 +171,9 @@ class Rule:
 RULES: list[Rule] = [
     Rule("Contract", lambda c: c["Contract"] == "Month-to-month",
          "Offer a 1-year contract with 10-15% discount or a free month to lock in loyalty."),
-    Rule("is_month_to_month", lambda c: c["Contract"] == "Month-to-month",
-         "Offer a 1-year contract with 10-15% discount or a free month to lock in loyalty."),
     Rule("tenure", lambda c: c["tenure"] <= 12,
          "Enrol in the new-customer onboarding programme: welcome call and 30/60/90-day check-ins."),
-    Rule("tenure_group", lambda c: c["tenure"] <= 12,
-         "Enrol in the new-customer onboarding programme: welcome call and 30/60/90-day check-ins."),
-    Rule("PaymentMethod", lambda c: c["PaymentMethod"] == "Electronic check",
-         "Incentivise switching to automatic payment (e.g. $5 bill credit)."),
-    Rule("auto_pay", lambda c: c["auto_pay"] == 0,
+    Rule("PaymentMethod", lambda c: "automatic" not in str(c["PaymentMethod"]),
          "Incentivise switching to automatic payment (e.g. $5 bill credit)."),
     Rule("TechSupport", lambda c: c["TechSupport"] == "No",
          "Give a free 3-month tech-support trial to reduce service frustration."),
@@ -169,7 +183,7 @@ RULES: list[Rule] = [
          "Proactively check fiber service quality and review pricing vs competitors."),
     Rule("MonthlyCharges", lambda c: c["MonthlyCharges"] >= 70,
          "Review the plan: offer a right-sized bundle or loyalty price to reduce bill shock."),
-    Rule("charge_increase", lambda c: c["charge_increase"] > 5,
+    Rule("MonthlyCharges", lambda c: c.get("charge_increase", 0) > 5,
          "Bill recently increased: explain the change and offer a temporary credit."),
     Rule("PaperlessBilling", lambda c: c["PaperlessBilling"] == "Yes",
          "Send a clear monthly usage summary so the customer sees value in every bill."),

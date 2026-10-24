@@ -38,5 +38,9 @@ DEFAULT_OFFER_COST: float = 100.0
 # Share of contacted would-be churners who stay because of the offer.
 DEFAULT_SUCCESS_RATE: float = 0.30
 
+# Risk bands on *calibrated* churn probability (shared by the app and explanations).
+RISK_HIGH: float = 0.50
+RISK_MEDIUM: float = 0.25
+
 for _d in (RAW_DIR, PROCESSED_DIR, MODELS_DIR, FIGURES_DIR):
     _d.mkdir(parents=True, exist_ok=True)

@@ -9,11 +9,10 @@ bad. They are not: with the default assumptions a missed churner costs
 out-of-fold training predictions** (never the test set, to avoid optimistic
 bias), then report test-set performance at that threshold.
 
-Note: because training uses balanced class weights, predicted probabilities
-are already shifted towards the churn class, so the cost-optimal cut-off lands
-close to 0.5 (0.47 with default assumptions) rather than at the "raw"
-break-even of 100 / 450 ≈ 0.22. The dashboard recomputes the optimum live
-when the assumptions change.
+Because the model is calibrated (see ``src/model.py``), the optimal cut-off
+lands close to the theoretical break-even ``offer_cost / (success_rate * clv)
+= 100 / 450 ≈ 0.22``. The dashboard recomputes the optimum live when the
+assumptions change.
 """
 from __future__ import annotations
 
@@ -29,8 +28,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+from sklearn.calibration import calibration_curve  # noqa: E402
 from sklearn.metrics import (ConfusionMatrixDisplay, average_precision_score,  # noqa: E402
-                             confusion_matrix, f1_score, precision_score, recall_score, roc_auc_score,
+                             brier_score_loss, confusion_matrix, f1_score, precision_score, recall_score, roc_auc_score,
                              roc_curve)
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -49,6 +49,7 @@ def classification_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: fl
     return {
         "threshold": round(float(threshold), 2),
         "roc_auc": round(roc_auc_score(y_true, y_prob), 4),
+        "brier": round(brier_score_loss(y_true, y_prob), 4),
         "pr_auc": round(average_precision_score(y_true, y_prob), 4),
         "precision": round(precision_score(y_true, y_pred), 4),
         "recall": round(recall_score(y_true, y_pred), 4),
@@ -78,6 +79,7 @@ def main() -> dict:
     oof = pd.read_csv(PROCESSED_DIR / "oof_predictions.csv")
     X_te, y_te = test[FEATURES], test[TARGET].to_numpy()
     prob = pipe.predict_proba(X_te)[:, 1]
+    prob_raw = pipe.pipe.predict_proba(X_te)[:, 1] if hasattr(pipe, "pipe") else prob
 
     best_t, _ = optimal_threshold(oof["y"].to_numpy(), oof["prob"].to_numpy())
     logger.info("Cost-optimal threshold (from out-of-fold train predictions): %.2f", best_t)
@@ -108,9 +110,21 @@ def main() -> dict:
     fig.tight_layout(); fig.savefig(FIGURES_DIR / "confusion_matrix.png", dpi=130); plt.close(fig)
     plot_threshold_curve(y_te, prob, best_t, FIGURES_DIR / "threshold_savings.png")
 
+    fig, ax = plt.subplots(figsize=(5.5, 5))
+    for p_, lab, c in [(prob_raw, "Before calibration", "#B0B0B0"), (prob, "After calibration", "#2E86AB")]:
+        frac, mean_p = calibration_curve(y_te, p_, n_bins=8, strategy="quantile")
+        ax.plot(mean_p, frac, "o-", color=c, lw=2, label=f"{lab} (Brier {brier_score_loss(y_te, p_):.3f})")
+    ax.plot([0, 1], [0, 1], "k--", lw=1, label="Perfectly calibrated")
+    ax.set_xlabel("Predicted churn probability"); ax.set_ylabel("Actual churn rate")
+    ax.set_title("Calibration: can the probabilities be trusted?"); ax.legend(loc="upper left", fontsize=8)
+    fig.tight_layout(); fig.savefig(FIGURES_DIR / "calibration_curve.png", dpi=130); plt.close(fig)
+
     metrics = {
         "model": info["model"], "cv_roc_auc": info["cv_roc_auc_tuned"],
         "n_test": int(len(y_te)), "test_churn_rate": round(float(y_te.mean()), 4),
+        "mean_predicted_prob": round(float(prob.mean()), 4),
+        "mean_predicted_prob_uncalibrated": round(float(prob_raw.mean()), 4),
+        "brier_uncalibrated": round(brier_score_loss(y_te, prob_raw), 4),
         "assumptions": {"clv": DEFAULT_CLV, "offer_cost": DEFAULT_OFFER_COST,
                         "success_rate": DEFAULT_SUCCESS_RATE},
         "default_threshold": m_default, "tuned_threshold": m_tuned,

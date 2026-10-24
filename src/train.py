@@ -6,7 +6,8 @@ Steps
 2. 5-fold stratified CV on the training set for Logistic Regression,
    Random Forest and LightGBM.
 3. Tune the best model with Optuna (maximising CV ROC-AUC).
-4. Save the full pipeline (preprocessing + model), out-of-fold predictions
+4. Platt-calibrate the probabilities on out-of-fold predictions.
+5. Save the calibrated model, out-of-fold predictions
    for threshold selection, and the held-out test set.
 
 Class imbalance (26.5% churners)
@@ -17,7 +18,10 @@ instead of SMOTE because:
   points across CV folds;
 * all three models support it natively, keeping the comparison fair;
 * the decision threshold is tuned afterwards with a cost model anyway, so
-  calibrating *where* to cut matters more than resampling.
+  choosing *where* to cut matters more than resampling.
+
+Class weights distort probabilities (they over-predict churn), so the final
+model is Platt-calibrated on out-of-fold predictions before it is saved.
 """
 from __future__ import annotations
 
@@ -40,6 +44,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from src.config import MODEL_FILE, MODELS_DIR, PROCESSED_DIR, REPORTS_DIR, SEED, TARGET  # noqa: E402
 from src.data_prep import clean_data, load_raw  # noqa: E402
 from src.features import FEATURES, add_features, build_preprocessor  # noqa: E402
+from src.model import CalibratedChurnModel  # noqa: E402
 
 logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -149,13 +154,20 @@ def main(n_trials: int = 40) -> None:
     oof = cross_val_predict(pipe, X_tr, y_tr, cv=CV, method="predict_proba")[:, 1]
     pipe.fit(X_tr, y_tr)
 
-    joblib.dump(pipe, MODEL_FILE)
-    pd.DataFrame({"y": y_tr.values, "prob": oof}).to_csv(PROCESSED_DIR / "oof_predictions.csv", index=False)
+    # Platt-calibrate on out-of-fold scores so probabilities are honest (see src/model.py).
+    model = CalibratedChurnModel.from_oof(pipe, y_tr.to_numpy(), oof)
+    oof_cal = model.calibrate(oof)
+    logger.info("Calibration: mean OOF prob %.3f -> %.3f (actual churn rate %.3f)",
+                oof.mean(), oof_cal.mean(), y_tr.mean())
+
+    joblib.dump(model, MODEL_FILE)
+    pd.DataFrame({"y": y_tr.values, "prob": oof_cal, "prob_raw": oof}).to_csv(PROCESSED_DIR / "oof_predictions.csv", index=False)
     X_te.assign(**{TARGET: y_te.values}).to_csv(PROCESSED_DIR / "test_set.csv", index=True)
     (MODELS_DIR / "model_info.json").write_text(json.dumps({
         "model": best_name, "best_params": params, "cv_roc_auc_tuned": round(tuned_auc, 4),
         "baseline_comparison": comparison[["model", "roc_auc", "roc_auc_std", "recall", "f1"]]
-        .round(4).to_dict(orient="records"), "seed": SEED,
+        .round(4).to_dict(orient="records"), "calibration": {"method": "platt", "a": round(model.a, 4), "b": round(model.b, 4)},
+        "seed": SEED,
     }, indent=2))
     logger.info("Saved model -> %s", MODEL_FILE.name)
 
