@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.business import campaign_impact, optimal_threshold  # noqa: E402
 from src.config import (DEFAULT_CLV, DEFAULT_OFFER_COST, DEFAULT_SUCCESS_RATE, METRICS_FILE,  # noqa: E402
-                        MODEL_FILE, PROCESSED_DIR, RAW_FILE, TARGET)
+                        MODEL_FILE, PROCESSED_DIR, RAW_FILE, RISK_HIGH, RISK_MEDIUM, TARGET)
 from src.data_prep import clean_data, load_raw  # noqa: E402
 from src.explain import ChurnExplainer, format_value, llm_recommendation, pretty  # noqa: E402
 from src.features import FEATURES, add_features  # noqa: E402
@@ -59,7 +59,7 @@ def md(text: str) -> str:
 
 def risk_band(p: float) -> str:
     """Map probability to a risk label."""
-    return "High" if p >= 0.6 else "Medium" if p >= 0.35 else "Low"
+    return "High" if p >= RISK_HIGH else "Medium" if p >= RISK_MEDIUM else "Low"
 
 
 def gauge(prob: float) -> go.Figure:
@@ -68,8 +68,9 @@ def gauge(prob: float) -> go.Figure:
         mode="gauge+number", value=prob * 100, number={"suffix": "%", "valueformat": ".0f"},
         title={"text": "Churn probability"},
         gauge={"axis": {"range": [0, 100]}, "bar": {"color": "#333"},
-               "steps": [{"range": [0, 35], "color": "#d4f1dd"}, {"range": [35, 60], "color": "#fde8c8"},
-                         {"range": [60, 100], "color": "#f9d0c4"}]}))
+               "steps": [{"range": [0, RISK_MEDIUM * 100], "color": "#d4f1dd"},
+                         {"range": [RISK_MEDIUM * 100, RISK_HIGH * 100], "color": "#fde8c8"},
+                         {"range": [RISK_HIGH * 100, 100], "color": "#f9d0c4"}]}))
     fig.update_layout(height=260, margin=dict(l=30, r=40, t=50, b=10))
     return fig
 
@@ -91,7 +92,9 @@ def show_explanation(row: pd.DataFrame, prob: float) -> None:
     drivers = explainer.explain_customer(row, top_n=8)
     c1, c2 = st.columns([1, 1.6])
     c1.plotly_chart(gauge(prob), width="stretch")
-    c1.markdown(f"**Risk level:** {risk_band(prob)}")
+    c1.markdown(f"**Risk level:** {risk_band(prob)}  \n"
+                f"<small>Calibrated: of customers scored ~{prob:.0%}, about {prob:.0%} actually leave.</small>",
+                unsafe_allow_html=True)
     c2.plotly_chart(driver_chart(drivers), width="stretch")
     text, source = llm_recommendation(row.iloc[0], drivers.head(5), prob)
     st.markdown(f"#### 💡 AI retention recommendation <small>({source})</small>", unsafe_allow_html=True)
