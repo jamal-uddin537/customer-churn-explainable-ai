@@ -1,0 +1,32 @@
+{
+  "model": "Logistic Regression",
+  "best_params": {
+    "C": 0.4458762915851513,
+    "l1_ratio": 1.0
+  },
+  "cv_roc_auc_tuned": 0.8458,
+  "baseline_comparison": [
+    {
+      "model": "Logistic Regression",
+      "roc_auc": 0.8457,
+      "roc_auc_std": 0.0113,
+      "recall": 0.7973,
+      "f1": 0.6287
+    },
+    {
+      "model": "Random Forest",
+      "roc_auc": 0.845,
+      "roc_auc_std": 0.009,
+      "recall": 0.7645,
+      "f1": 0.6332
+    },
+    {
+      "model": "LightGBM",
+      "roc_auc": 0.8385,
+      "roc_auc_std": 0.0094,
+      "recall": 0.7431,
+      "f1": 0.625
+    }
+  ],
+  "seed": 42
+}
