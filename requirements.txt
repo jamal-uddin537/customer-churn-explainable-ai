@@ -1,0 +1,24 @@
+# Core (versions pinned for reproducibility; the saved model needs the same scikit-learn)
+pandas==3.0.5
+numpy==2.5.3
+scikit-learn==1.9.1
+lightgbm==4.7.0
+shap==0.54.1
+optuna==5.0.0
+joblib==1.6.0
+
+# Dashboard
+streamlit==1.66.1
+plotly==7.1.0
+
+# Charts / notebook / tests
+matplotlib==3.11.2
+seaborn==0.13.2
+nbformat==5.11.1
+nbconvert==7.17.2
+ipykernel==7.4.0
+pytest==9.1.1
+
+# Optional: LLM-written recommendations (only used if an API key is set)
+# anthropic
+# openai
