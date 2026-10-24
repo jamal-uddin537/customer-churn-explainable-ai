@@ -1,0 +1,8 @@
+# Notebook, tests and linting (not needed to run the dashboard)
+-r requirements.txt
+seaborn==0.13.2
+nbformat==5.11.1
+nbconvert==7.17.2
+ipykernel==7.4.0
+pytest==9.1.1
+ruff

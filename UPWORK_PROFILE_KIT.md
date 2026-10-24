@@ -10,7 +10,7 @@ Copy-paste material for your Upwork profile and proposals. Replace anything in `
 
 A subscription company was losing 26.5% of its customers and 31% of its monthly revenue. I built an end-to-end machine-learning solution that predicts who will leave, explains why, and recommends how to keep them.
 
-I cleaned and analysed 7,043 customer records, engineered business features, and compared Logistic Regression, Random Forest and LightGBM with cross-validation and Optuna tuning. Instead of the default 0.5 cut-off, I chose the decision threshold with a cost model that maximises savings. On unseen customers the model catches 82% of churners (ROC-AUC 0.84) and delivers an estimated $377k net saving per retention campaign at 122% ROI.
+I cleaned and analysed 7,043 customer records, engineered business features, and compared Logistic Regression, Random Forest and LightGBM with cross-validation and Optuna tuning. I calibrated the probabilities so they can be trusted, and chose the decision threshold with a cost model instead of the default 0.5. On unseen customers the model catches 82% of churners (ROC-AUC 0.84), an estimated $377k net saving per campaign at 121% ROI.
 
 SHAP explanations turn every prediction into plain English, and a recommendation engine (with an optional LLM) suggests the right offer. Everything runs in a four-page interactive Streamlit dashboard with a live ROI calculator.
 
